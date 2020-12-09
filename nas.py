@@ -98,10 +98,19 @@ class NAS():
         
         return 1/(test_loss/len(self.testloader))
         
+    ## Decide to stop genetic algorithm or not
+    def early_stop(self, trend, num_values = 30):
+        fit = np.array(trend[-num_values:])
+        key = fit[0]
+        if np.sum(fit==key) == len(fit):
+            return True
+        return False
         
-    def start(self, n_generations = 250, n_mating = 1, cr_prob = 1.0, mut_prob = 1.0, verbose = True):
+        
+    def start(self, n_generations = 250, n_mating = 1, cr_prob = 1.0, mut_prob = 1.0, verbose = True, warmup = 100):
         
         fitness_trail = []
+        trend = []
         ## fitness calculation for initial candidates
         for i in range(self.size):
             temp_model = Network(self.input_dim, self.encoder_layer_population[i], self.decoder_layer_population[i],
@@ -221,6 +230,11 @@ class NAS():
                 print("Generation {} completed. Best fitness value is {}".format(gen,max(self.fitness)))
                 
             fitness_trail.append(max(self.fitness))
+            
+            if gen > warmup:
+                if self.early_stop(fitness_trail):
+                    print("Early stopping initiated")
+                    break
             
         ## Save the best model
         best_index = self.fitness.index(max(self.fitness))

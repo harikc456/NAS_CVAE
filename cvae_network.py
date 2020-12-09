@@ -7,7 +7,7 @@ class Network(nn.Module):
     
     def __init__(self, input_dim, encoder_layers, decoder_layers, encoder_neurons, decoder_neurons, latent_dim, cond_dim):
         super(Network, self).__init__()
-        self.input_dim = input_dim
+        self.input_dim = input_dim 
         self.encoder_layers = encoder_layers
         self.decoder_layers = decoder_layers
         self.encoder_neurons = encoder_neurons
@@ -24,8 +24,8 @@ class Network(nn.Module):
         
     def construct_network(self):
         modules = []
-        #prev_layer = [self.input_dim + self.cond_dim]
-        prev_layer = [self.input_dim]
+        prev_layer = [self.input_dim + self.cond_dim]
+        #prev_layer = [self.input_dim]
         
         ## Construct the encoder
         
@@ -42,7 +42,7 @@ class Network(nn.Module):
         ## Construct the decoder
         
         modules = []
-        prev_layer.append(self.latent_dim)
+        prev_layer.append(self.latent_dim + + self.cond_dim)
         for i in range(len(self.decoder_layers)):
             if self.decoder_layers[i] == 1:
                 no_of_neuron = self.decoder_neurons[i]
@@ -58,13 +58,14 @@ class Network(nn.Module):
         return mu + eps*std
     
     def decode(self, z, c):
+        z = torch.cat([z,c], dim = 1)
         x = self.decoder(z)
         x = torch.sigmoid(x)
         return x
         
     def forward(self, x, y):
         c = nn.functional.one_hot(y, num_classes = self.cond_dim)
-        x = x.view(-1, self.input_dim)
+        x = torch.cat([x.view(-1, 784), c.float()], dim = 1)
         x = self.encoder(x)
         mu = self.mu_fc(x)
         logvar = self.logvar_fc(x)

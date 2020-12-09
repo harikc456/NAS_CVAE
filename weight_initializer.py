@@ -1,12 +1,16 @@
 import torch
+import logging
 import numpy as np
 import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
+from scipy.special import softmax
+
+logging.basicConfig(filename='example.log',level=logging.DEBUG)
 
 class Weight():
     
-    def __init__(self, model, criterion, testloader, population_size = 10):
+    def __init__(self, model, criterion, testloader, population_size = 10, tunable = True):
         self.model = model
         self.population_size = population_size
         self.dims = self.get_dims()
@@ -15,6 +19,7 @@ class Weight():
         self.population = self.initialize_population()
         self.fitness = self.check_fitness()
         self.fitness_probs = softmax(self.fitness)
+        self.tunable = tunable
      
     
     ## Get the dimensions of each weight matrix in the model
@@ -31,7 +36,9 @@ class Weight():
         for pop in range(self.population_size):
             layer = []
             for dim in self.dims:
-                temp_tensor = torch.randn(dim) * torch.sqrt(torch.tensor(2 / dim[0]))
+                #temp_tensor = torch.randn(dim) * torch.sqrt(torch.tensor(2 / dim[0]))
+                temp_tensor = torch.empty(dim)
+                nn.init.xavier_normal_(temp_tensor)
                 layer.append(temp_tensor)
             population.append(layer)
         return population
@@ -56,16 +63,14 @@ class Weight():
         self.model.load_state_dict(state_dict)
         loss = 0
         for data,y in self.testloader:
-            y_hat = self.model(data, y)
-            loss += self.loss_fn(y_hat, y)
-        return 1/loss
+            recon, mu, logvar = self.model(data, y)
+            loss += self.loss_fn(recon, data, mu, logvar).item()
+        return np.abs(loss/len(self.testloader))
     
     ## Decide to stop differential evolution or not
     def early_stop(self, trend, num_values = 30):
         fit = np.array(trend[-num_values:])
         key = fit[0]
-        print(fit,key)
-        print(fit==key)
         if np.sum(fit==key) == len(fit):
             return True
         return False
@@ -114,22 +119,29 @@ class Weight():
     ## Start the differential evolution
     def start(self, n_generations, n_weights = 1, verbose = True, warmup = 50):
         trend = []
+        f = 0.4
         for gen in range(n_generations):
             for c in range(self.population_size):
                 parent = self.population[c]
-                child = self.mutation()
+                child = self.mutation(f)
                 child = self.crossover(parent, child)
                 child_fitness = self.fitness_of(child)
-                if child_fitness > self.fitness[c]:
+                if child_fitness < self.fitness[c]:
                     self.population[c] = child
                     self.fitness[c] = child_fitness
             if verbose:
-                print("Generation {} Best Fitness {}".format(gen, max(self.fitness)))
-            trend.append(max(self.fitness).item())
+                print("Generation {} Best Fitness {}".format(gen, min(self.fitness)))
+                logging.info("Generation {} Best Fitness {}  Fitness std.{}".format(gen, min(self.fitness), np.std(self.fitness)))
+                #print(f"Fitness List: {self.fitness}")
+            trend.append(min(self.fitness))
+            if self.tunable and (np.std(self.fitness) < 1.2):
+                f = np.random.uniform(0.6, 1.0)
+                logging.info("F value changed")
+                print("f value changed")
             if gen > warmup:
                 if self.early_stop(trend):
                     print("Early stopping initiated")
                     break
-        best_fitness = max(self.fitness)
+        best_fitness = min(self.fitness)
         self.apply_weights(self.fitness.index(best_fitness))
         return trend
